@@ -4,8 +4,8 @@ buildscript {
         jcenter()
     }
     dependencies {
-        classpath 'com.github.jengelman.gradle.plugins:shadow:1.2.2'
-        classpath 'net.saliman:gradle-cobertura-plugin:2.2.8'
+        classpath 'com.github.jengelman.gradle.plugins:shadow:1.2.3'
+        classpath 'net.saliman:gradle-cobertura-plugin:2.3.1'
     }
 }
 
@@ -20,7 +20,7 @@ subprojects {
     [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
 
     group               = "co.paralleluniverse"
-    version             = "0.7.4-SNAPSHOT"
+    version             = "0.7.8-SNAPSHOT"
     status              = "integration"
     description         = "Fibers, Channels and Actors for the JVM"
     ext.url             = "http://puniverse.github.com/quasar"
@@ -38,8 +38,8 @@ subprojects {
     ext.jdkVer = ext.java8 ? "8" : "7"
     ext.quasarJar = "${rootProject.projectDir}/quasar-core/build/libs/quasar-core-${version}${ext.java8 ? "-jdk8" : ""}.jar" // project(':quasar-core').jar.archivePath
 
-    ext.asmVer    = '5.0.4'
-    ext.kotlinVer = '1.0.0-beta-3595'
+    ext.asmVer    = '5.1'
+    ext.kotlinVer = '1.0.2'
 
     if (!project.hasProperty("sonatypeUsername") || !project.hasProperty("sonatypePassword")) {
         println "sonatype username or password not set"
@@ -60,7 +60,7 @@ subprojects {
             mavenCentral()
             maven { url "https://oss.sonatype.org/content/repositories/releases" }
             maven { url "https://oss.sonatype.org/content/repositories/snapshots" }
-            maven { url "http://download.oracle.com/maven/" }
+            jcenter()
         }
     }
 
@@ -102,12 +102,12 @@ subprojects {
         compile("io.dropwizard.metrics:metrics-core:3.1.2") {
             exclude group: 'org.slf4j', module: '*'
         }
-        provided "org.apache.ant:ant:1.9.6"
-        compile "com.google.guava:guava:18.0"
+        provided "org.apache.ant:ant:1.9.7"
+        compile "com.google.guava:guava:20.0"
         timewarp 'co.paralleluniverse:timewarp:0.1.0-SNAPSHOT'
         testCompile 'co.paralleluniverse:timewarp:0.1.0-SNAPSHOT'
         testCompile 'junit:junit:4.12'
-        testCompile('com.google.truth:truth:0.27') {
+        testCompile('com.google.truth:truth:0.30') {
             exclude group: 'com.google.guava', module: 'guava'
             exclude group: 'junit', module: 'junit'
         }
@@ -117,10 +117,10 @@ subprojects {
         }
         testCompile "org.ow2.asm:asm:$asmVer"
 
-        jmhCompile 'org.openjdk.jmh:jmh-core:1.11.2'
-        jmhCompile 'org.openjdk.jmh:jmh-generator-annprocess:1.11.2'
+        jmhCompile 'org.openjdk.jmh:jmh-core:1.17'
+        jmhCompile 'org.openjdk.jmh:jmh-generator-annprocess:1.17'
 
-        compileOnly 'org.kohsuke.metainf-services:metainf-services:1.6'
+        compileOnly 'org.kohsuke.metainf-services:metainf-services:1.7'
         // compileOnly 'com.google.auto.service:auto-service:1.0-rc1' // same as metainf-services
         // markdownDoclet "ch.raffael.pegdown-doclet:pegdown-doclet:1.1.1"
     }
@@ -146,7 +146,10 @@ subprojects {
         // systemProperty 'co.paralleluniverse.fibers.verifyInstrumentation', 'true'
 
         // systemProperty "java.util.logging.config.file", "jul.properties"
-        systemProperty "log4j.configurationFile", "${rootProject.projectDir}/log4j.xml"
+
+        // Uncomment and add ${rootProject.projectDir}/log4j.xml, if not present, for logging
+        // systemProperty "log4j.configurationFile", "${rootProject.projectDir}/log4j.xml"
+
         // systemProperty "Log4jContextSelector", "org.apache.logging.log4j.core.async.AsyncLoggerContextSelector"
 
         // systemProperty 'co.paralleluniverse.debugMode', 'true'
@@ -160,9 +163,14 @@ subprojects {
         }
 
         jvmArgs "-Xbootclasspath/a:${configurations.timewarp.singleFile}"
-        jvmArgs "-javaagent:${configurations.timewarp.singleFile}"
+        if (System.getenv("TRAVIS") == 'true') {
+            jvmArgs "-javaagent:${configurations.timewarp.singleFile}=3" // slow clock down x3
+        }
 
         jvmArgs "-Xmx2048m"
+        if (!project.ext.java8) {
+            jvmArgs "-XX:MaxPermSize=512m" // Travis is having some trouble with PermGen
+        }
         // jvmArgs "-XX:-UseCompressedOops"
 
         beforeTest { desc ->
@@ -230,8 +238,8 @@ subprojects {
             }
             // stylesheetFile = rootProject.file('./baselib/javadoc.css')
             links = [
-        "http://docs.oracle.com/javase/7/docs/api/",
-        "http://docs.guava-libraries.googlecode.com/git-history/v18.0/javadoc/"
+                "http://docs.oracle.com/javase/7/docs/api/",
+                "http://google.github.io/guava/releases/19.0/api/docs/"
             ]
         }
     }
@@ -419,6 +427,15 @@ project (':quasar-core') {
             compileClasspath += jdk8.output + jdk8test.compileClasspath + jdk8test.output
             runtimeClasspath += compileClasspath + jdk8test.runtimeClasspath
         }
+
+        classloadertest {
+            java {
+                srcDir 'src/classloadertest/java'
+            }
+
+            compileClasspath += jdk7.output + test.compileClasspath
+            runtimeClasspath += compileClasspath + test.runtimeClasspath
+        }
     }
 
     configurations {
@@ -429,19 +446,20 @@ project (':quasar-core') {
     dependencies {
         jdk7Compile ":jsr166e"
         compile ":high-scale-lib"
-        compile "org.hdrhistogram:HdrHistogram:2.1.8"
-        compile("org.latencyutils:LatencyUtils:2.0.2") {
+        compile "org.hdrhistogram:HdrHistogram:2.1.9"
+        compile("org.latencyutils:LatencyUtils:2.0.3") {
             exclude group: "org.hdrhistogram", module: '*'
         }
         compile "org.ow2.asm:asm:$asmVer"
         compile "org.ow2.asm:asm-analysis:$asmVer"
         compile "org.ow2.asm:asm-commons:$asmVer"
         compile "org.ow2.asm:asm-util:$asmVer"
-        compile "com.lmax:disruptor:3.3.2"
-        compile("com.esotericsoftware.kryo:kryo:2.24.0") {
+
+        // The exclusions are needed to get asm 5.0.4 whilst Kryo still depends on 5.0.3
+        compile("com.esotericsoftware:kryo:4.0.0") {
             exclude group: "org.ow2.asm", module: '*'
         }
-        compile("de.javakaffee:kryo-serializers:0.37") {
+        compile("de.javakaffee:kryo-serializers:0.41") {
             exclude group: "com.esotericsoftware", module: '*'
             exclude group: "com.esotericsoftware.kryo", module: '*'
         }
@@ -490,7 +508,7 @@ project (':quasar-core') {
             }
         }
 
-        def testTask = task("${set.name}Test", type: Test, dependsOn: shadowJarTask) {
+        def testTask = task("${set.name}Test", type: Test, dependsOn: [shadowJarTask, compileClassloadertestJava]) {
             testClassesDir = project.sourceSets["${set.name}test"].output.classesDir
             classpath = project.sourceSets["${set.name}test"].runtimeClasspath
 
@@ -602,14 +620,14 @@ project (':quasar-actors') {
     dependencies {
         provided project(path: ':quasar-core', configuration: "jdk${jdkVer}Archives")
         // compile 'org.mutabilitydetector:MutabilityDetector:0.9.2'
-        compile "org.slf4j:slf4j-api:1.7.13"
-        compile "net.bytebuddy:byte-buddy:0.7.2"
-        testRuntime("org.apache.logging.log4j:log4j-slf4j-impl:2.4.1") {
+        compile "org.slf4j:slf4j-api:1.7.21"
+        compile "net.bytebuddy:byte-buddy:1.5.7"
+        testRuntime("org.apache.logging.log4j:log4j-slf4j-impl:2.7") {
             exclude group: "org.slf4j", module: '*'
         }
-        testRuntime "org.apache.logging.log4j:log4j-api:2.4.1"
-        testRuntime "org.apache.logging.log4j:log4j-core:2.4.1"
-        testRuntime "com.lmax:disruptor:3.3.2" // required for log4j
+        testRuntime "org.apache.logging.log4j:log4j-api:2.7"
+        testRuntime "org.apache.logging.log4j:log4j-core:2.7"
+        testRuntime "com.lmax:disruptor:3.3.6" // required for log4j
     }
 }
 
@@ -625,7 +643,7 @@ project (':quasar-galaxy') {
             exclude group: "org.slf4j", module: '*'
         }
 
-        testCompile ('org.gridkit.lab:telecontrol-ssh:0.7.24'){
+            testCompile ('org.gridkit.lab:telecontrol-ssh:0.7.24'){
             exclude group: 'org.ow2.asm', module: '*'
             exclude group: 'org.slf4j', module: '*'
         }
@@ -673,7 +691,7 @@ project (':quasar-reactive-streams') {
             exclude group: "junit", module: "*"
             exclude group: "org.testng", module: "testng"
         }
-        testCompile('org.testng:testng:6.9.9') {
+        testCompile('org.testng:testng:6.9.13.6') {
             exclude group: "com.google.guava", module: "*"
             exclude group: "junit", module: "*"
         }
@@ -681,6 +699,15 @@ project (':quasar-reactive-streams') {
 
     test {
         useTestNG()
+    }
+}
+
+project (':quasar-disruptor') {
+    //project.evaluationDependsOn(':quasar-core')
+
+    dependencies {
+        provided project(path: ':quasar-core', configuration: "jdk${jdkVer}Archives")
+        compile "com.lmax:disruptor:3.3.6"
     }
 }
 

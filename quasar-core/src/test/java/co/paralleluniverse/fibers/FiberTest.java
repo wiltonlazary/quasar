@@ -23,9 +23,6 @@ import co.paralleluniverse.strands.SimpleConditionSynchronizer;
 import co.paralleluniverse.strands.Strand;
 import co.paralleluniverse.strands.SuspendableCallable;
 import co.paralleluniverse.strands.SuspendableRunnable;
-import co.paralleluniverse.vtime.ScaledClock;
-import co.paralleluniverse.vtime.SystemClock;
-import co.paralleluniverse.vtime.VirtualClock;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.io.Serializable;
 
@@ -109,28 +106,48 @@ public class FiberTest implements Serializable {
     }
 
     @Test
-    public void testTimeout() throws Exception {
-        VirtualClock.setGlobal(Debug.isCI() ? new ScaledClock(0.3) : SystemClock.instance());
-        System.out.println("Using clock: " + VirtualClock.get());
+    public void testPriority() throws Exception {
+        Fiber fiber = new Fiber(scheduler, new SuspendableRunnable() {
+            @Override
+            public void run() throws SuspendExecution {
+                
+            }
+        });
+
+        assertThat(fiber.getPriority(), is(Strand.NORM_PRIORITY));
+        
+        fiber.setPriority(3);
+        assertThat(fiber.getPriority(), is(3));
+        
+        try {
+            fiber.setPriority(Strand.MAX_PRIORITY + 1);
+            fail();
+        } catch (IllegalArgumentException e) {
+        }
 
         try {
-            Fiber fiber = new Fiber(scheduler, new SuspendableRunnable() {
-                @Override
-                public void run() throws SuspendExecution {
-                    Fiber.park(100, TimeUnit.MILLISECONDS);
-                }
-            }).start();
-
-            try {
-                fiber.join(50, TimeUnit.MILLISECONDS);
-                fail();
-            } catch (java.util.concurrent.TimeoutException e) {
-            }
-
-            fiber.join(200, TimeUnit.MILLISECONDS);
-        } finally {
-            VirtualClock.setGlobal(SystemClock.instance());
+            fiber.setPriority(Strand.MIN_PRIORITY - 1);
+            fail();
+        } catch (IllegalArgumentException e) {
         }
+    }
+
+    @Test
+    public void testTimeout() throws Exception {
+        Fiber fiber = new Fiber(scheduler, new SuspendableRunnable() {
+            @Override
+            public void run() throws SuspendExecution {
+                Fiber.park(100, TimeUnit.MILLISECONDS);
+            }
+        }).start();
+
+        try {
+            fiber.join(50, TimeUnit.MILLISECONDS);
+            fail();
+        } catch (java.util.concurrent.TimeoutException e) {
+        }
+
+        fiber.join(200, TimeUnit.MILLISECONDS);
     }
 
     @Test

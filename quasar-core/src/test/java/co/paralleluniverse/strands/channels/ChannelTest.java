@@ -24,13 +24,11 @@ import co.paralleluniverse.strands.SuspendableCallable;
 import co.paralleluniverse.strands.SuspendableRunnable;
 import co.paralleluniverse.strands.channels.Channels.OverflowPolicy;
 import co.paralleluniverse.strands.queues.QueueCapacityExceededException;
-import co.paralleluniverse.vtime.ScaledClock;
-import co.paralleluniverse.vtime.SystemClock;
-import co.paralleluniverse.vtime.VirtualClock;
 import com.google.common.collect.ImmutableSet;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.TimeUnit;
+
 import static org.hamcrest.CoreMatchers.*;
 import org.junit.After;
 import org.junit.AfterClass;
@@ -56,17 +54,6 @@ public class ChannelTest {
     public TestName name = new TestName();
     @Rule
     public TestRule watchman = TestUtil.WATCHMAN;
-
-    @BeforeClass
-    public static void setupClass() {
-        VirtualClock.setForCurrentThreadAndChildren(Debug.isCI() ? new ScaledClock(0.3) : SystemClock.instance());
-        System.out.println("Using clock: " + VirtualClock.get());
-    }
-
-    @AfterClass
-    public static void afterClass() {
-        VirtualClock.setGlobal(SystemClock.instance());
-    }
 
     final int mailboxSize;
     final OverflowPolicy policy;
@@ -202,6 +189,70 @@ public class ChannelTest {
         String m = ch.receive();
 
         assertThat(m, equalTo("a message"));
+
+        thread.join();
+    }
+
+    @Test
+    public void sendMessageThreadToThreadTimeoutOK() throws Exception {
+        final Channel<String> ch = newChannel();
+
+        assumeTrue(mailboxSize == 1);
+        assumeTrue(OverflowPolicy.BLOCK.equals(policy));
+
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Thread.sleep(100);
+
+                    ch.send("message 1");
+                    ch.send("message 2", 100, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException | SuspendExecution ex) {
+                    throw new AssertionError(ex);
+                }
+            }
+        });
+        thread.start();
+
+        Thread.sleep(150);
+
+        String m = ch.receive();
+        assertThat(m, equalTo("message 1"));
+        m = ch.receive(100, TimeUnit.MILLISECONDS);
+        assertThat(m, equalTo("message 2"));
+
+        thread.join();
+    }
+
+    @Test
+    public void sendMessageThreadToThreadTimeoutKO() throws Exception {
+        final Channel<String> ch = newChannel();
+
+        assumeTrue(mailboxSize == 1);
+        assumeTrue(OverflowPolicy.BLOCK.equals(policy));
+
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Thread.sleep(100);
+
+                    ch.send("message 1");
+                    ch.send("message 2", 100, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException | SuspendExecution ex) {
+                    throw new AssertionError(ex);
+                }
+            }
+        });
+        thread.start();
+
+        Thread.sleep(250);
+
+        String m = ch.receive();
+        assertThat(m, equalTo("message 1"));
+        m = ch.receive(100, TimeUnit.MILLISECONDS);
+        assertNull(m);
 
         thread.join();
     }

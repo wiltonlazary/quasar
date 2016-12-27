@@ -13,16 +13,13 @@
  */
 package co.paralleluniverse.concurrent.util;
 
-import co.paralleluniverse.common.util.UtilUnsafe;
-import java.lang.ref.Reference;
-import java.lang.reflect.Array;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.security.AccessControlContext;
-import java.util.HashMap;
-import java.util.Map;
-import sun.misc.Unsafe;
+import co.paralleluniverse.common.util.*;
+import sun.misc.*;
+
+import java.lang.ref.*;
+import java.lang.reflect.*;
+import java.security.*;
+import java.util.*;
 
 /**
  *
@@ -35,9 +32,10 @@ public class ThreadAccess {
     private static final long inheritableThreadLocalsOffset;
     private static final long contextClassLoaderOffset;
     private static final long inheritedAccessControlContextOffset;
-    private static final Method createInheritedMap;
     private static final Class threadLocalMapClass;
     private static final Constructor threadLocalMapConstructor;
+    private static final Constructor threadLocalMapInheritedConstructor;
+//    private static final Method threadLocalMapSet;
     private static final Field threadLocalMapTableField;
     private static final Field threadLocalMapSizeField;
     private static final Field threadLocalMapThresholdField;
@@ -60,16 +58,19 @@ public class ThreadAccess {
             inheritedAccessControlContextOffset = _inheritedAccessControlContextOffset;
 
             threadLocalMapClass = Class.forName("java.lang.ThreadLocal$ThreadLocalMap");
-            createInheritedMap = ThreadLocal.class.getDeclaredMethod("createInheritedMap", threadLocalMapClass);
-            createInheritedMap.setAccessible(true);
             threadLocalMapConstructor = threadLocalMapClass.getDeclaredConstructor(ThreadLocal.class, Object.class);
             threadLocalMapConstructor.setAccessible(true);
+            threadLocalMapInheritedConstructor = threadLocalMapClass.getDeclaredConstructor(threadLocalMapClass);
+            threadLocalMapInheritedConstructor.setAccessible(true);
+//            threadLocalMapSet = threadLocalMapClass.getDeclaredMethod("set", ThreadLocal.class, Object.class);
+//            threadLocalMapSet.setAccessible(true);
             threadLocalMapTableField = threadLocalMapClass.getDeclaredField("table");
             threadLocalMapTableField.setAccessible(true);
             threadLocalMapSizeField = threadLocalMapClass.getDeclaredField("size");
             threadLocalMapSizeField.setAccessible(true);
             threadLocalMapThresholdField = threadLocalMapClass.getDeclaredField("threshold");
             threadLocalMapThresholdField.setAccessible(true);
+
             threadLocalMapEntryClass = Class.forName("java.lang.ThreadLocal$ThreadLocalMap$Entry");
             threadLocalMapEntryConstructor = threadLocalMapEntryClass.getDeclaredConstructor(ThreadLocal.class, Object.class);
             threadLocalMapEntryConstructor.setAccessible(true);
@@ -100,22 +101,46 @@ public class ThreadAccess {
         return UNSAFE.getObject(thread, inheritableThreadLocalsOffset);
     }
 
-    public static void setInheritablehreadLocals(Thread thread, Object inheritableThreadLocals) {
+    public static void setInheritableThreadLocals(Thread thread, Object inheritableThreadLocals) {
         UNSAFE.putObject(thread, inheritableThreadLocalsOffset, inheritableThreadLocals);
     }
 
-    public static Object createInheritedMap(Object inheritableThreadLocals) {
+    private static Object createThreadLocalMap(ThreadLocal tl, Object firstValue) {
         try {
-            return createInheritedMap.invoke(null, inheritableThreadLocals);
-        } catch (Exception ex) {
+            return threadLocalMapConstructor.newInstance(tl, firstValue);
+        } catch (ReflectiveOperationException ex) {
             throw new AssertionError(ex);
         }
     }
 
+    public static Object createInheritedMap(Object inheritableThreadLocals) {
+        try {
+            return threadLocalMapInheritedConstructor.newInstance(inheritableThreadLocals);
+        } catch (ReflectiveOperationException ex) {
+            throw new AssertionError(ex);
+        }
+    }
+
+//    public static void set(Thread t, ThreadLocal tl, Object value) {
+//        Object map = getThreadLocals(t);
+//        if (map != null)
+//            set(map, tl, value);
+//        else
+//            setThreadLocals(t, createThreadLocalMap(tl, value));
+//    }
+//
+//    private static void set(Object map, ThreadLocal tl, Object value) {
+//        try {
+//            threadLocalMapSet.invoke(map, tl, value);
+//        } catch (ReflectiveOperationException e) {
+//            throw new AssertionError(e);
+//        }
+//    }
+
     // createInheritedMap works only for InheritableThreadLocals
     public static Object cloneThreadLocalMap(Object orig) {
         try {
-            Object clone = threadLocalMapConstructor.newInstance(new ThreadLocal(), null);
+            Object clone = createThreadLocalMap(new ThreadLocal(), null);
 
             Object origTable = threadLocalMapTableField.get(orig);
             final int len = Array.getLength(origTable);
@@ -130,7 +155,7 @@ public class ThreadAccess {
             threadLocalMapSizeField.setInt(clone, threadLocalMapSizeField.getInt(orig));
             threadLocalMapThresholdField.setInt(clone, threadLocalMapThresholdField.getInt(orig));
             return clone;
-        } catch (Exception ex) {
+        } catch (ReflectiveOperationException ex) {
             throw new AssertionError(ex);
         }
     }

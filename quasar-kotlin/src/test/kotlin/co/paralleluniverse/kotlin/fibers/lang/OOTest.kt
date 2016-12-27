@@ -1,6 +1,6 @@
 /*
  * Quasar: lightweight threads and actors for the JVM.
- * Copyright (c) 2013-2015, Parallel Universe Software Co. All rights reserved.
+ * Copyright (c) 2015-2016, Parallel Universe Software Co. All rights reserved.
  *
  * This program and the accompanying materials are dual-licensed under
  * either the terms of the Eclipse Public License v1.0 as published by
@@ -13,26 +13,18 @@
  */
 package co.paralleluniverse.kotlin.fibers.lang
 
-import org.junit.After
-import org.junit.Before
 import org.junit.Test
 import org.junit.Assert.*
-import org.hamcrest.CoreMatchers.*
-import org.junit.Ignore
-import co.paralleluniverse.strands.SuspendableRunnable
 import co.paralleluniverse.fibers.Suspendable
 import co.paralleluniverse.fibers.FiberForkJoinScheduler
-import co.paralleluniverse.strands.channels.Channels
 import co.paralleluniverse.fibers.Fiber
-import java.util.concurrent.TimeUnit
 import co.paralleluniverse.strands.SuspendableCallable
 import kotlin.reflect.KProperty
 
 /**
- *
  * @author circlespainter
  */
-public class OOTest {
+class OOTest {
     val scheduler = FiberForkJoinScheduler("test", 4, null, false)
     val iv = 1
         @Suspendable get() { Fiber.sleep(1) ; return field }
@@ -113,23 +105,37 @@ public class OOTest {
         }
     }
 
+    // TODO: https://youtrack.jetbrains.com/issue/KT-10532
+    /*
     companion object : DerivedDerived2(), BaseTrait1 {
         override @Suspendable fun doSleep() {
             super<DerivedDerived2>.doSleep()
         }
     }
 
+    @Test public fun testOODefObject() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            OOTest.Companion.doSleep()
+            true
+        }).start().get())
+    }
+    */
+
     class Data() : DerivedDerived2(), BaseTrait2 {
         @Suspendable override fun doSleep() {
             super<BaseTrait2>.doSleep()
         }
 
-        @Suspendable public fun doSomething() {
+        @Suspendable fun doSomething() {
             Fiber.sleep(10)
         }
     }
 
-    class Delegating(bb2: BaseTrait2) : Base(), BaseTrait2 by bb2
+    class Delegating(bb2: BaseTrait2) : Base(), BaseTrait2 by bb2 {
+        @Suspendable override fun doSleep() {
+            Fiber.sleep(8)
+        }
+    }
 
     enum class E(val data: Int?) {
         V1(0),
@@ -146,301 +152,233 @@ public class OOTest {
 
     }
 
+    @Suppress("unused")
     @Suspendable fun Any?.doFiberSleep() {
         Fiber.sleep(10)
     }
 
+    @Suppress("unused")
     var E.mvE: Int
         @Suspendable get() { Fiber.sleep(1) ; return 1 }
         @Suspendable set(v) { Fiber.sleep(1) }
+    @Suppress("unused")
     var E.mdE by D()
         @Suspendable get
         @Suspendable set
 
     object O : DerivedDerived2()
 
-    @Test public fun testOOSimple() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                Base().doSleep()
-                return true
-            }
+    @Test fun testOOSimple() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            Base().doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOOInheritingObjectLiteral() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                (object : BaseTrait1 {}).doSleep()
-                return true
-            }
+    @Test fun testOOInheritingObjectLiteral() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            (object : BaseTrait1 {}).doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testDerived() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                Derived(1).doSleep()
-                return true
-            }
+    @Test fun testDerived() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            Derived(1).doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOOOverridingObjectLiteral() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                (object : DerivedAbstract1() {
-                    override @Suspendable fun doSleep() {
-                        Fiber.sleep(1)
-                    }
-                }).doSleep()
-                return true
-            }
+    @Test fun testOOOverridingObjectLiteral() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            (object : DerivedAbstract1() {
+                override @Suspendable fun doSleep() {
+                    Fiber.sleep(1)
+                }
+            }).doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOODerived1() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                DerivedDerived1().doSleep()
-                return true
-            }
+    @Test fun testOODerived1() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            DerivedDerived1().doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOODerived2() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                (object : DerivedDerived2() {}).doSleep()
-                return true
-            }
+    @Test fun testOODerived2() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            (object : DerivedDerived2() {}).doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOODerived3() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                DerivedDerived3().doSleep()
-                return true
-            }
+    @Test fun testOODerived3() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            DerivedDerived3().doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOOInnerDerived() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                InnerDerived().doSleep()
-                return true
-            }
+    @Test fun testOOInnerDerived() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            InnerDerived().doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOOOuter() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                outerDoSleep()
-                return true
-            }
+    @Test fun testOOOuter() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            outerDoSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOODefObject() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                OOTest.Companion.doSleep()
-                return true
-            }
+    @Test fun testOOData() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            Data().doSomething()
+            true
         }).start().get())
     }
 
-    @Test public fun testOOData() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                Data().doSomething()
-                return true
-            }
+    @Test fun testOODataInherited() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            Data().doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOODataInherited() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                Data().doSleep()
-                return true
-            }
+    @Test fun testOOEnum1() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            E.V1.enumFun()
+            true
         }).start().get())
     }
 
-    @Test public fun testOOEnum1() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                E.V1.enumFun()
-                return true
-            }
+    @Test fun testOOEnum2() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            E.V2.enumFun()
+            true
         }).start().get())
     }
 
-    @Test public fun testOOEnum2() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                E.V2.enumFun()
-                return true
-            }
+    @Test fun testOOEnumExt() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            E.V1.doFiberSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOOEnumExt() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                E.V1.doFiberSleep()
-                return true
-            }
+    @Test fun testOOValPropGet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            iv
+            true
         }).start().get())
     }
 
-    @Test public fun testOOValPropGet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                iv
-                return true
-            }
+    @Test fun testOOVarPropGet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            mv
+            true
         }).start().get())
     }
 
-    @Test public fun testOOVarPropGet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                mv
-                return true
-            }
+    @Test fun testOOVarPropSet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            mv = 3
+            true
         }).start().get())
     }
 
-    @Test public fun testOOVarPropSet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                mv = 3
-                return true
-            }
+    @Test fun testOOExtVarPropGet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            E.V2.mvE
+            true
         }).start().get())
     }
 
-    @Test public fun testOOExtVarPropGet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                E.V2.mvE
-                return true
-            }
+    @Test fun testOOExtVarPropSet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            E.V2.mvE = 4
+            true
         }).start().get())
     }
 
-    @Test public fun testOOExtVarPropSet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                E.V2.mvE = 4
-                return true
-            }
+    @Test fun testOOObjectDecl() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            O.doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOOObjectDecl() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                O.doSleep()
-                return true
-            }
+    @Test fun testOODeleg() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<kotlin.Boolean> @Suspendable {
+            Delegating(DerivedDerived3()).doSleep()
+            true
         }).start().get())
     }
 
-    @Test public fun testOODeleg() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                Delegating(DerivedDerived3()).doSleep()
-                return true
-            }
+    @Test fun testOOValPropRefGet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<Boolean> @Suspendable {
+            OOTest::iv.get(this@OOTest)
+            true
         }).start().get())
     }
 
-    // TODO these require instrumenting the language's Runtime, not best for performance nor to stay decoupled from the language runtime; also for some reason they run very slow and get the tests stuck for quite some time.
-
-    @Test public fun testOOValPropRefGet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                OOTest::iv.get(this@OOTest)
-                return true
-            }
+    @Test fun testOOVarPropRefGet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<Boolean> @Suspendable {
+            OOTest::mv.get(this@OOTest)
+            true
         }).start().get())
     }
 
-    @Test public fun testOOVarPropRefGet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                OOTest::mv.get(this@OOTest)
-                return true
-            }
+    @Test fun testOOVarPropRefSet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<Boolean> @Suspendable {
+            OOTest::mv.set(this@OOTest, 3)
+            true
         }).start().get())
     }
 
-    @Test public fun testOOVarPropRefSet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                OOTest::mv.set(this@OOTest, 3)
-                return true
-            }
+    @Test fun testOODelegVarPropRefGet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<Boolean> @Suspendable {
+            OOTest::md.get(this@OOTest)
+            true
         }).start().get())
     }
 
-    @Test public fun testOODelegVarPropRefGet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                OOTest::md.get(this@OOTest)
-                return true
-            }
+    @Test fun testOODelegVarPropRefSet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<Boolean> @Suspendable {
+            OOTest::md.set(this@OOTest, "hi")
+            true
         }).start().get())
     }
 
-    @Test public fun testOODelegVarPropRefSet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                OOTest::md.set(this@OOTest, "hi")
-                return true
-            }
+    @Test fun testOODelegVarPropGet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<Boolean> @Suspendable {
+            md
+            true
         }).start().get())
     }
 
-    @Test public fun testOODelegVarPropGet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                md
-                return true
-            }
+    @Test fun testOODelegVarPropSet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<Boolean> @Suspendable {
+            md = "hi"
+            true
         }).start().get())
     }
 
-    @Test public fun testOODelegVarPropSet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                md = "hi"
-                return true
-            }
+    @Test fun testOOExtDelegVarPropSet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<Boolean> @Suspendable {
+            E.V1.mdE = ""
+            true
         }).start().get())
     }
 
-    @Test public fun testOOExtDelegVarPropSet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                E.V1.mdE = ""
-                return true
-            }
-        }).start().get())
-    }
-
-    @Test public fun testOOExtDelegVarPropGet() {
-        assertTrue(Fiber(scheduler, object : SuspendableCallable<Boolean> {
-            @Suspendable override fun run(): Boolean {
-                E.V1.mdE
-                return true
-            }
+    @Test fun testOOExtDelegVarPropGet() {
+        assertTrue(Fiber(scheduler, SuspendableCallable<Boolean> @Suspendable {
+            E.V1.mdE
+            true
         }).start().get())
     }
 }
