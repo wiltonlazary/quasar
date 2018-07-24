@@ -30,6 +30,18 @@ A core component of Quasar, bytecode instrumentation, is a fork of the wonderful
 
 ## News
 
+### June 10, 2018
+
+Quasar [0.7.10](https://github.com/puniverse/quasar/releases/tag/v0.7.10) has been released.
+
+### July 28, 2017
+
+Quasar [0.7.9](https://github.com/puniverse/quasar/releases/tag/v0.7.9) has been released.
+
+### May 24, 2017
+
+Quasar [0.7.8](https://github.com/puniverse/quasar/releases/tag/v0.7.8) has been released.
+
 ### December 2, 2016
 
 Quasar [0.7.7](https://github.com/puniverse/quasar/releases/tag/v0.7.7) has been released.
@@ -115,7 +127,8 @@ Add the following Maven/Gradle dependencies:
 | Actors           | `co.paralleluniverse:quasar-actors:{{site.version}}`
 | Clustering       | `co.paralleluniverse:quasar-galaxy:{{site.version}}`
 | Reactive Streams | `co.paralleluniverse:quasar-reactive-streams:{{site.version}}`
-| Kotlin           | `co.paralleluniverse:quasar-kotlin:{{site.version}}`
+| Kotlin (JDK8+)   | `co.paralleluniverse:quasar-kotlin:{{site.version}}`
+
 
 ### Instrumenting Your Code {#instrumentation}
 
@@ -255,7 +268,7 @@ then [install Gradle](https://docs.gradle.org/current/userguide/installation.htm
 
 ### Fibers {#fibers}
 
-Quasar's chief contribution is that of the lightweight thread, called *fiber* in Quasar.  
+Quasar's chief contribution is that of the lightweight thread, called *fiber* in Quasar.
 Fibers provide functionality similar to threads, and a similar API, but they're not managed by the OS. They are lightweight in terms of RAM (an idle fiber occupies ~400 bytes of RAM) and put a far lesser burden on the CPU when task-switching. You can have millions of fibers in an application. If you are familiar with Go, fibers are like goroutines. Fibers in Quasar are scheduled by one or more [ForkJoinPool](http://docs.oracle.com/javase/7/docs/api/java/util/concurrent/ForkJoinPool.html)s.
 
 Fibers are not meant to replace threads in all circumstances. A fiber should be used when its body (the code it executes) blocks very often waiting on other fibers (e.g. waiting for messages sent by other fibers on a channel, or waiting for the value of a dataflow-variable). For long-running computations that rarely block, traditional threads are preferable. Fortunately, as we shall see, fibers and threads interoperate very well.
@@ -897,7 +910,7 @@ An actor is a self-contained execution unit with well-defined inputs and outputs
 
 All actors extends the [`Actor`]({{javadoc}}/actors/Actor.html) class. The constructor takes the actor's name (which does not have to be unique, and may even be `null`), and its mailbox settings (of type [`MailboxConfig`]({{javadoc}}/actors/MailboxConfig.html)).
 
-`MailboxConfig` defines the mailbox size (the number of messages that can wait in the mailbox channel), with `-1` specifying an unbounded mailbox, and an *overflow policy*. The overflow policy works the same as for plain channels, except that the `THROW` policy doesn't cause an exception to be thrown in the sender if the mailbox capacity is exceeded, but rather throws an exception into the receiving actor (the exception will be thrown when the actor next blocks on a `receive`).
+`MailboxConfig` defines the mailbox size (the number of messages that can wait in the mailbox channel), with `-1` specifying an unbounded mailbox, and an *overflow policy*. The overflow policy is currently ignored. If the mailbox capacity is exceeded, an exception will be thrown *inside* the receiving actor when the actor next blocks on a `receive`.
 
 An actor is required to implement the [`doRun`]({{javadoc}}/actors/Actor.html#doRun()) method. This method is the actor body, and is run when the actor is spawned.
 
@@ -1074,7 +1087,7 @@ When actor B that is linked to or watched by actor A dies, it automatically send
 
 When `receive` (or `tryReceive`) is called, it takes the next message in the mailbox, and passes it to a protected method called [`filterMessage`]({{javadoc}}/actors/Actor.html#filterMessage(java.lang.Object)). Whatever `filterMessage` returns, that's the message actually returned by `receive` (or `tryReceive`), but it `filterMessage` returns `null`, `receive` will not return and wait for the next message (and `tryReceive` will check if another message is already available, or otherwise return `null`). The default implementation of `filterMessage` always returns the message it received unless it is of type [`LifecycleMessage`]({{javadoc}}/actors/LifecycleMessage.html), in which case it passes it to the protected [`handleLifecycleMessage`]({{javadoc}}/actors/Actor.html#handleLifecycleMessage(co.paralleluniverse.actors.LifecycleMessage)) method.
 
-[`handleLifecycleMessage`]({{javadoc}}/actors/Actor.html#handleLifecycleMessage(co.paralleluniverse.actors.LifecycleMessage)) examines the message. If it is an [`ExitMessage`]({{javadoc}}/actors/ExitMessage.html) (which extends `LifecycleMessage`), it checks to see if it's been sent as a result of a *watch* (by testing whether its [`getWatch`]({{javadoc}}/actors/ExitMessage.html#getWatch()) method returns a non-null value). If it is, it's silently ignored. But if it's a result of a *linked* actor dying (`getWatch()` returns `null`), the method throws a [`LifecycleException`]({{javadoc}}/actors/LifecycleException.html). This exception is thrown, in turn, by actor A's call to `receive` (or `tryReceive`). You can override `handleLifecycleMessage` to change this behavior.
+[`handleLifecycleMessage`]({{javadoc}}/actors/Actor.html#handleLifecycleMessage(co.paralleluniverse.actors.LifecycleMessage)) examines the message. If it is about an actor that has died but has been unlinked or unwatched already, it just ignores the message. If it is an [`ExitMessage`]({{javadoc}}/actors/ExitMessage.html) (which extends `LifecycleMessage`), it checks to see if it's been sent as a result of a *watch* (by testing whether its [`getWatch`]({{javadoc}}/actors/ExitMessage.html#getWatch()) method returns a non-null value). If it is, it's silently ignored. But if it's a result of a *linked* actor dying (`getWatch()` returns `null`), the method throws a [`LifecycleException`]({{javadoc}}/actors/LifecycleException.html). This exception is thrown, in turn, by actor A's call to `receive` (or `tryReceive`). You can override `handleLifecycleMessage` to change this behavior.
 
 If you do not want actor A to die if linked actor B does, you should surround the call to `receive` or `tryReceive` with a `try {} catch(LifecycleException) {}` block.
 

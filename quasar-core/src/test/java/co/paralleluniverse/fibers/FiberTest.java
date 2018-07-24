@@ -43,6 +43,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import static org.hamcrest.CoreMatchers.*;
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Rule;
 import org.junit.rules.TestName;
@@ -70,6 +71,12 @@ public class FiberTest implements Serializable {
 //    }
     public FiberTest(FiberScheduler scheduler) {
         this.scheduler = scheduler;
+    }
+
+    @After
+    public void tearDown() {
+        // Cannot shutdown FiberScheduler, as it is reused over multiple tests. So these FiberSchedulers and their associated threads will be kept over the whole test run.
+//      scheduler.shutdown();
     }
 
     @Parameterized.Parameters
@@ -281,6 +288,33 @@ public class FiberTest implements Serializable {
         assertThat(tl1.get(), is("foo"));
         assertThat(tl2.get(), is("bar"));
     }
+    
+    @Test
+    public void testNoLocals() throws Exception { // shitty test
+        final ThreadLocal<String> tl1 = new ThreadLocal<>();
+        final InheritableThreadLocal<String> tl2 = new InheritableThreadLocal<>();
+        tl1.set("foo");
+        tl2.set("bar");
+
+        Fiber fiber = new Fiber(scheduler, new SuspendableRunnable() {
+            @Override
+            public void run() throws SuspendExecution, InterruptedException {
+                assertThat(tl1.get(), is(nullValue()));
+                assertThat(tl2.get(), is(nullValue()));
+
+                tl1.set("koko");
+                tl2.set("bubu");
+
+                assertThat(tl1.get(), is("koko"));
+                assertThat(tl2.get(), is("bubu"));
+            }
+        }).setNoLocals(true);
+        fiber.start();
+        fiber.join();
+
+        assertThat(tl1.get(), is("foo"));
+        assertThat(tl2.get(), is("bar"));
+    }
 
     @Test
     public void testInheritThreadLocals() throws Exception {
@@ -310,6 +344,8 @@ public class FiberTest implements Serializable {
 
         assertThat(tl1.get(), is("foo"));
     }
+    
+    
 
     @Test
     public void testThreadLocalsParallel() throws Exception {

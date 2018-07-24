@@ -1,6 +1,6 @@
 /*
  * Quasar: lightweight threads and actors for the JVM.
- * Copyright (c) 2013-2016, Parallel Universe Software Co. All rights reserved.
+ * Copyright (c) 2013-2017, Parallel Universe Software Co. All rights reserved.
  * 
  * This program and the accompanying materials are dual-licensed under
  * either the terms of the Eclipse Public License v1.0 as published by
@@ -15,6 +15,7 @@ package co.paralleluniverse.fibers;
 
 import co.paralleluniverse.common.monitoring.FlightRecorder;
 import co.paralleluniverse.common.monitoring.FlightRecorderMessage;
+import co.paralleluniverse.common.reflection.ASMUtil;
 import co.paralleluniverse.common.util.Debug;
 import co.paralleluniverse.common.util.Exceptions;
 import co.paralleluniverse.common.util.ExtendedStackTrace;
@@ -141,12 +142,15 @@ public class Fiber<V> extends Strand implements Joinable<V>, Serializable, Futur
     private transient Thread runningThread;
     private final SuspendableCallable<V> target;
     private byte priority;
+    
+    private boolean noLocals = false;
     private transient ClassLoader contextClassLoader;
     private transient AccessControlContext inheritedAccessControlContext;
     // These are typed as Object because they store JRE-internal ThreadLocalMap objects, which is a package private
     // class. Also, they're swapped for Object[] during serialisation, as ThreadLocalMap is not a serialisable type.
     private Object fiberLocals;
     private Object inheritableFiberLocals;
+
     private long sleepStart;
     private transient Future<Void> timeoutTask;
     private transient ParkAction prePark;
@@ -338,6 +342,23 @@ public class Fiber<V> extends Strand implements Joinable<V>, Serializable, Futur
 
     long getRun() {
         return run;
+    }
+    
+    @Deprecated
+    public Fiber setNoLocals(boolean value) {
+        this.noLocals = value;
+        if (value) {
+            this.fiberLocals = null;
+            this.inheritableFiberLocals = null;
+            this.inheritedAccessControlContext = null;
+            this.contextClassLoader = null;
+        }
+        return this;
+    }
+    
+    @Deprecated
+    public boolean getNoLocals() {
+        return noLocals;
     }
 
     //<editor-fold defaultstate="collapsed" desc="Constructors">
@@ -943,19 +964,23 @@ public class Fiber<V> extends Strand implements Joinable<V>, Serializable, Futur
 
     private void installFiberDataInThread(Thread currentThread) {
         record(1, "Fiber", "installFiberDataInThread", "%s <-> %s", this, currentThread);
-        installFiberLocals(currentThread);
-        installFiberContextClassLoader(currentThread);
-        if (MAINTAIN_ACCESS_CONTROL_CONTEXT)
-            installFiberInheritedAccessControlContext(currentThread);
+        if (!noLocals) {
+            installFiberLocals(currentThread);
+            installFiberContextClassLoader(currentThread);
+            if (MAINTAIN_ACCESS_CONTROL_CONTEXT)
+                installFiberInheritedAccessControlContext(currentThread);
+        }
         setCurrentFiber(this, currentThread);
     }
 
     private void restoreThreadData(Thread currentThread, Object old) {
         record(1, "Fiber", "restoreThreadData", "%s <-> %s", this, currentThread);
-        restoreThreadLocals(currentThread);
-        restoreThreadContextClassLoader(currentThread);
-        if (MAINTAIN_ACCESS_CONTROL_CONTEXT)
-            restoreThreadInheritedAccessControlContext(currentThread);
+        if (!noLocals) {
+            restoreThreadLocals(currentThread);
+            restoreThreadContextClassLoader(currentThread);
+            if (MAINTAIN_ACCESS_CONTROL_CONTEXT)
+                restoreThreadInheritedAccessControlContext(currentThread);
+        }
         setCurrentTarget(old, currentThread);
     }
 
@@ -978,7 +1003,7 @@ public class Fiber<V> extends Strand implements Joinable<V>, Serializable, Futur
     }
 
     private void switchFiberAndThreadLocals(Thread currentThread, boolean install) {
-        if (scheduler == null) // in tests
+        if (noLocals || scheduler == null) // in tests
             return;
 
         Object tmpThreadLocals = ThreadAccess.getThreadLocals(currentThread);
@@ -1084,7 +1109,8 @@ public class Fiber<V> extends Strand implements Joinable<V>, Serializable, Futur
     public Fiber inheritThreadLocals() {
         if (state != State.NEW)
             throw new IllegalStateException("Method called on a started fiber");
-        this.fiberLocals = ThreadAccess.cloneThreadLocalMap(ThreadAccess.getThreadLocals(Thread.currentThread()));
+        if (!noLocals)
+            this.fiberLocals = ThreadAccess.cloneThreadLocalMap(ThreadAccess.getThreadLocals(Thread.currentThread()));
         return this;
     }
 
@@ -1741,8 +1767,20 @@ public class Fiber<V> extends Strand implements Joinable<V>, Serializable, Futur
         if (i == null)
             return "N/A";
         return
-            "BCIs " + Arrays.toString(i.suspendableCallSitesOffsetsAfterInstr()) +
-            ", lines " + Arrays.toString(i.suspendableCallSites());
+            "lines " + Arrays.toString(i.suspendableCallSites())
+            + ", "
+            + " calls " + Arrays.toString(getReadableCallsites(i.suspendableCallSiteNames()))
+//          + "BCIs " + Arrays.toString(i.suspendableCallSitesOffsetsAfterInstr()) +
+            ;
+    }
+    
+    private static String[] getReadableCallsites(String[] callsites) {
+        String[] readable = new String[callsites.length];
+        for (int i = 0; i < callsites.length; i++)
+            readable[i] = SuspendableHelper.getCallsiteOwner(callsites[i]) + "."
+                          + SuspendableHelper.getCallsiteName(callsites[i])
+                          + ASMUtil.getReadableDescriptor(SuspendableHelper.getCallsiteDesc(callsites[i]));
+        return readable;
     }
 
     private static StringBuilder initTrace(int i, ExtendedStackTraceElement[] stes) {
@@ -2041,7 +2079,7 @@ public class Fiber<V> extends Strand implements Joinable<V>, Serializable, Futur
 
             // If we need to serialise thread local storage slots as well, then we have to do a swap to avoid
             // type problems. If we don't, then it's much easier to serialise things.
-            if (!includeThreadLocals) {
+            if (!includeThreadLocals || f.noLocals) {
                 Object tmpFiberLocals = f.fiberLocals;
                 Object tmpInheritableFiberLocals = f.inheritableFiberLocals;
                 f.fiberLocals = null;
@@ -2098,9 +2136,10 @@ public class Fiber<V> extends Strand implements Joinable<V>, Serializable, Futur
                     return null;
                 f = (Fiber) new FieldSerializer(kryo, reg.getType()).read(kryo, input, reg.getType());
 
-                f.fiberLocals = ThreadAccess.getThreadLocals(currentThread);
-                f.inheritableFiberLocals = ThreadAccess.getInheritableThreadLocals(currentThread);
-
+                if (!f.noLocals) {
+                    f.fiberLocals = ThreadAccess.getThreadLocals(currentThread);
+                    f.inheritableFiberLocals = ThreadAccess.getInheritableThreadLocals(currentThread);
+                }
                 return f;
             } catch (Throwable t) {
                 t.printStackTrace();

@@ -1,6 +1,6 @@
 /*
  * Quasar: lightweight threads and actors for the JVM.
- * Copyright (c) 2013-2016, Parallel Universe Software Co. All rights reserved.
+ * Copyright (c) 2013-2017, Parallel Universe Software Co. All rights reserved.
  * 
  * This program and the accompanying materials are dual-licensed under
  * either the terms of the Eclipse Public License v1.0 as published by
@@ -27,8 +27,11 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
 import java.util.WeakHashMap;
+import java.util.regex.Pattern;
 
 /**
  * @author pron
@@ -37,13 +40,14 @@ public final class QuasarInstrumentor {
     @SuppressWarnings("WeakerAccess")
     public static final int ASMAPI = Opcodes.ASM5;
 
-    private final static String EXAMINED_CLASS = System.getProperty("co.paralleluniverse.fibers.writeInstrumentedClassesStartingWith");
+    private final static String EXAMINED_CLASS = System.getProperty("co.paralleluniverse.fibers.writeInstrumentedClasses");
     private static final boolean allowJdkInstrumentation = SystemProperties.isEmptyOrTrue("co.paralleluniverse.fibers.allowJdkInstrumentation");
     private WeakHashMap<ClassLoader, MethodDatabase> dbForClassloader = new WeakHashMap<>();
     private boolean check;
     private final boolean aot;
     private boolean allowMonitors;
     private boolean allowBlocking;
+    private final Collection<Pattern> exclusions = new ArrayList<>();
     private Log log;
     private boolean verbose;
     private boolean debug;
@@ -79,6 +83,8 @@ public final class QuasarInstrumentor {
                 return false;
             if (className.startsWith("java/lang/") || (!allowJdkInstrumentation && MethodDatabase.isJDK(className)))
                 return false;
+            if (isExcluded(className))
+                return false;
         }
         return true;
     }
@@ -105,11 +111,7 @@ public final class QuasarInstrumentor {
             log(LogLevel.INFO, "TRANSFORM: %s %s", className,
                 (db.getClassEntry(className) != null && db.getClassEntry(className).requiresInstrumentation()) ? "request" : "");
 
-            // DEBUG
-            if (EXAMINED_CLASS != null && className.startsWith(EXAMINED_CLASS)) {
-                writeToFile(className.replace('/', '.') + "-" + new Date().getTime() + "-quasar-1-preinstr.class", cb);
-                // cv1 = new TraceClassVisitor(cv, new PrintWriter(System.err));
-            }
+            examine(className, "quasar-1-preinstr", cb);
         } else {
             log(LogLevel.INFO, "TRANSFORM: null className");
         }
@@ -121,11 +123,7 @@ public final class QuasarInstrumentor {
         r1.accept(ic1, 0);
         cb = cw1.toByteArray();
 
-        // DEBUG
-        if (EXAMINED_CLASS != null && className != null && className.startsWith(EXAMINED_CLASS)) {
-            writeToFile(className.replace('/', '.') + "-" + new Date().getTime() + "-quasar-2.class", cb);
-            // cv1 = new TraceClassVisitor(cv, new PrintWriter(System.err));
-        }
+        examine(className, "quasar-2", cb);
 
         // Phase 2, instrument, tree API
         final ClassReader r2 = new ClassReader(cb);
@@ -146,11 +144,7 @@ public final class QuasarInstrumentor {
             }
         }
 
-        // DEBUG
-        if (EXAMINED_CLASS != null && className != null && className.startsWith(EXAMINED_CLASS)) {
-            writeToFile(className.replace('/', '.') + "-" + new Date().getTime() + "-quasar-4.class", cb);
-            // cv1 = new TraceClassVisitor(cv, new PrintWriter(System.err));
-        }
+        examine(className, "quasar-4", cb);
 
         // Phase 4, fill suspendable call offsets, event API is enough
         final OffsetClassReader r3 = new OffsetClassReader(cb);
@@ -161,8 +155,7 @@ public final class QuasarInstrumentor {
 
         // DEBUG
         if (EXAMINED_CLASS != null) {
-            if (className != null && className.startsWith(EXAMINED_CLASS))
-                writeToFile(className.replace('/', '.') + "-" + new Date().getTime() + "-quasar-5-final.class", cb);
+            examine(className, "quasar-5-final", cb);
 
             if (check) {
                 ClassReader r4 = new ClassReader(cb);
@@ -174,6 +167,14 @@ public final class QuasarInstrumentor {
         return cb;
     }
 
+    private void examine(String className, String suffix, byte[] data) {
+        if (EXAMINED_CLASS != null && className != null && className.contains(EXAMINED_CLASS)) {
+            final String filename = className.replace('/', '.') + "-" + new Date().getTime() + "-" + suffix + ".class";
+            writeToFile(filename, data);
+//            return new TraceClassVisitor(cv, new PrintWriter(new File(filename)));
+        }
+    }
+    
     @SuppressWarnings("WeakerAccess")
     public synchronized MethodDatabase getMethodDatabase(ClassLoader loader) {
         if (loader == null)
@@ -244,6 +245,27 @@ public final class QuasarInstrumentor {
         this.debug = debug;
         setLogLevelMask();
     }
+    
+    public synchronized void addExcludedPackage(String packageGlob) {
+        exclusions.add(packagePattern(packageGlob));
+    }
+    
+    public synchronized boolean isExcluded(String className) {
+        if (className != null) {
+            className = className.replace('.', '/');
+            
+            final int i = className.lastIndexOf('/');
+            if (i < 0)
+                return false;
+            final String packageName = className.substring(0, i);
+            
+            for (Pattern p : exclusions) {
+                if (p.matcher(packageName).matches())
+                    return true;
+            }
+        }
+        return false;
+    }
 
     private synchronized void setLogLevelMask() {
         logLevelMask = (1 << LogLevel.WARNING.ordinal());
@@ -296,5 +318,39 @@ public final class QuasarInstrumentor {
             total += r;
         }
         return total;
+    }
+    
+    private static Pattern packagePattern(String packageGlob) {
+        final String DOT = "[^/]"; // exclude /
+        
+        final String glob = packageGlob.replace('.', '/');
+        
+        StringBuilder out = new StringBuilder(glob.length() + 5);
+        out.append('^');
+        for (int i = 0; i < glob.length(); ++i) {
+            final char c = glob.charAt(i);
+            switch (c) {
+                case '*':
+                    out.append(DOT + "*");
+                    break;
+                case '?':
+                    out.append(DOT);
+                    break;
+                case '.':
+                    out.append("\\.");
+                    break;
+                case '\\':
+                    out.append("\\\\");
+                    break;
+                default:
+                    out.append(c);
+            }
+        }
+        if (glob.endsWith("**"))
+            out.append(".*");
+        
+        out.append('$');
+        
+        return Pattern.compile(out.toString());
     }
 }
